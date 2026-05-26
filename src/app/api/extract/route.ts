@@ -4,7 +4,7 @@ import { extractDatenblatt } from "@/lib/extraction/extract-datenblatt";
 import { extractMietvertrag } from "@/lib/extraction/extract-mietvertrag";
 import { extractRichtwert } from "@/lib/extraction/extract-richtwert";
 import { extractTextWithOcrFallback } from "@/lib/extraction/ocr-fallback";
-import { assessPdfTextQuality, normalizePdfText } from "@/lib/extraction/pdf-text";
+import { assessPdfTextQuality, normalizePdfText } from "@/lib/extraction/parser-utils";
 import type { DocumentExtractionResult, ExtractionDocumentKey, ExtractionDocumentType } from "@/lib/extraction/types";
 import { scannedPdfMessage } from "@/lib/extraction/types";
 import type { ExtractedData } from "@/types/case";

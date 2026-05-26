@@ -1,4 +1,5 @@
 import { parseEuroValue as parseCalculationEuroValue } from "@/lib/calculation";
+import type { PdfTextQuality } from "@/lib/extraction/types";
 
 export type FindLabeledValueOptions = {
   maxLookahead?: number;
@@ -43,6 +44,42 @@ export function findLabeledValue(lines: string[], labels: string[], options: Fin
 
 export function parseEuroValue(value: unknown) {
   return parseCalculationEuroValue(value) ?? undefined;
+}
+
+export function assessPdfTextQuality(text: string): PdfTextQuality {
+  const normalized = normalizePdfText(text);
+  const textLength = normalized.length;
+  const words = normalized.match(/[\p{L}\p{N}]{2,}/gu) ?? [];
+  const letters = normalized.match(/\p{L}/gu) ?? [];
+  const visibleCharacters = normalized.replace(/\s/g, "").length;
+  const letterRatio = visibleCharacters === 0 ? 0 : roundRatio(letters.length / visibleCharacters);
+
+  if (textLength === 0) {
+    return { isUsable: false, reason: "Kein lesbarer PDF-Text erkannt.", textLength, wordCount: 0, letterRatio };
+  }
+
+  if (textLength < 100) {
+    return { isUsable: false, reason: "PDF-Text ist zu kurz für eine verlässliche Auswertung.", textLength, wordCount: words.length, letterRatio };
+  }
+
+  if (words.length < 20) {
+    return { isUsable: false, reason: "PDF-Text enthält zu wenige Wörter für eine verlässliche Auswertung.", textLength, wordCount: words.length, letterRatio };
+  }
+
+  if (letterRatio < 0.25) {
+    return { isUsable: false, reason: "PDF-Text enthält auffällig wenige Buchstaben.", textLength, wordCount: words.length, letterRatio };
+  }
+
+  return { isUsable: true, textLength, wordCount: words.length, letterRatio };
+}
+
+export function normalizePdfText(text: string) {
+  return text
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 export function parseAreaValue(value = "") {
@@ -124,4 +161,8 @@ function looksLikeStandaloneLabel(value: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function roundRatio(value: number) {
+  return Math.round(value * 1000) / 1000;
 }
