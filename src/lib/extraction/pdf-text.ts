@@ -13,12 +13,14 @@ export async function extractPdfText(file: Blob | ArrayBuffer | Uint8Array): Pro
   }
 
   const pdfjs = await importPdfJs();
+  configurePdfJsWorker(pdfjs);
+  const isServer = typeof window === "undefined";
   const loadingTask = pdfjs.getDocument({
     data,
     useWorkerFetch: false,
     isEvalSupported: false,
     disableFontFace: true,
-    disableWorker: true,
+    disableWorker: isServer,
   });
   const document = await loadingTask.promise;
   const pageTexts: string[] = [];
@@ -42,6 +44,9 @@ export async function extractPdfText(file: Blob | ArrayBuffer | Uint8Array): Pro
 }
 
 type PdfJsModule = {
+  GlobalWorkerOptions?: {
+    workerSrc?: string;
+  };
   getDocument: (options: {
     data: Uint8Array;
     useWorkerFetch?: boolean;
@@ -62,8 +67,24 @@ type PdfJsModule = {
 
 async function importPdfJs(): Promise<PdfJsModule> {
   await ensurePdfJsRuntime();
-  const module = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as PdfJsModule;
+  const module = (await importPdfJsModule()) as PdfJsModule;
   return module;
+}
+
+async function importPdfJsModule() {
+  if (typeof window !== "undefined") {
+    return import("pdfjs-dist/build/pdf.mjs");
+  }
+
+  return import("pdfjs-dist/legacy/build/pdf.mjs");
+}
+
+function configurePdfJsWorker(pdfjs: PdfJsModule) {
+  if (typeof window === "undefined") return;
+  if (!pdfjs.GlobalWorkerOptions) return;
+  if (pdfjs.GlobalWorkerOptions.workerSrc) return;
+
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 }
 
 async function ensurePdfJsRuntime() {
