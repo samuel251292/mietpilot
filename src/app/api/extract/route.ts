@@ -4,7 +4,7 @@ import { extractDatenblatt } from "@/lib/extraction/extract-datenblatt";
 import { extractMietvertrag } from "@/lib/extraction/extract-mietvertrag";
 import { extractRichtwert } from "@/lib/extraction/extract-richtwert";
 import { extractTextWithOcrFallback } from "@/lib/extraction/ocr-fallback";
-import { assessPdfTextQuality, extractPdfText } from "@/lib/extraction/pdf-text";
+import { assessPdfTextQuality, normalizePdfText } from "@/lib/extraction/pdf-text";
 import type { DocumentExtractionResult, ExtractionDocumentKey, ExtractionDocumentType } from "@/lib/extraction/types";
 import { scannedPdfMessage } from "@/lib/extraction/types";
 import type { ExtractedData } from "@/types/case";
@@ -41,12 +41,15 @@ export async function POST(request: Request) {
     }
 
     const documents = await Promise.all(
-      documentTypes.flatMap((type) =>
-        formData
+      documentTypes.flatMap((type) => {
+        const texts = formData.getAll(`${type}__text`).map((value) => (typeof value === "string" ? value : ""));
+        const pages = formData.getAll(`${type}__pages`).map((value) => (typeof value === "string" ? Number(value) : 0));
+
+        return formData
           .getAll(type)
           .filter(isUploadedFile)
-          .map((file) => parseDocument(type, file)),
-      ),
+          .map((file, index) => parseDocument(type, file, { text: texts[index] ?? "", pages: pages[index] ?? 0 }));
+      }),
     );
 
     if (documents.length === 0) {
@@ -77,7 +80,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function parseDocument(type: ExtractionDocumentType, file: File): Promise<DocumentExtractionResult> {
+async function parseDocument(type: ExtractionDocumentType, file: File, clientTextResult?: { text: string; pages?: number }): Promise<DocumentExtractionResult> {
   if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
     return {
       type,
@@ -95,18 +98,28 @@ async function parseDocument(type: ExtractionDocumentType, file: File): Promise<
   }
 
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    const bytes = Buffer.from(arrayBuffer);
+    const text = normalizePdfText(clientTextResult?.text ?? "");
 
-    if (bytes.length === 0) {
-      throw new Error("file buffer empty");
+    if (!text) {
+      return {
+        type,
+        fileName: file.name,
+        status: "Prüfung erforderlich",
+        success: false,
+        requiresOCR: false,
+        textLength: 0,
+        extractedTextLength: 0,
+        data: {},
+        issues: [{ field: type, message: "PDF-Text konnte im Browser nicht gelesen werden. Bitte Dokument manuell prüfen." }],
+        error: "PDF-Text konnte im Browser nicht gelesen werden.",
+        message: "PDF-Text konnte im Browser nicht gelesen werden. Bitte Dokument manuell prüfen.",
+      };
     }
 
-    const textResult = await extractPdfText(bytes);
-    const quality = assessPdfTextQuality(textResult.text);
+    const quality = assessPdfTextQuality(text);
 
     if (!quality.isUsable) {
-      const ocrResult = await extractTextWithOcrFallback(type, bytes);
+      const ocrResult = await extractTextWithOcrFallback(type);
 
       if (!ocrResult.success) {
         return {
@@ -116,7 +129,7 @@ async function parseDocument(type: ExtractionDocumentType, file: File): Promise<
           success: false,
           requiresOCR: true,
           ocrUsed: false,
-          textLength: textResult.text.length,
+          textLength: text.length,
           extractedTextLength: 0,
           data: {},
           issues: [{ field: type, message: quality.reason || "Bitte prüfen" }],
@@ -148,7 +161,7 @@ async function parseDocument(type: ExtractionDocumentType, file: File): Promise<
       };
     }
 
-    const parsed = parseByType(type, textResult.text);
+    const parsed = parseByType(type, text);
     const hasData = Object.keys(parsed.data).length > 0;
 
     return {
@@ -158,8 +171,8 @@ async function parseDocument(type: ExtractionDocumentType, file: File): Promise<
       success: true,
       requiresOCR: false,
       ocrUsed: false,
-      textLength: textResult.text.length,
-      extractedTextLength: textResult.text.length,
+      textLength: text.length,
+      extractedTextLength: text.length,
       data: parsed.data,
       issues: parsed.issues,
       message: hasData ? undefined : "Text wurde erkannt, aber keine sicheren Falldaten. Bitte prüfen.",

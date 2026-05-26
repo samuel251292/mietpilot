@@ -1,5 +1,6 @@
 import { CaseService, formatStoredDate } from "@/lib/case-service";
 import { isDocumentReExtractable } from "@/lib/documents/data-url";
+import { extractPdfText } from "@/lib/extraction/pdf-text";
 import { createPendingExtractedChanges, createReviewValuesFromExtracted, mergePendingExtractedChanges } from "@/lib/extraction/pending-changes";
 import { fetchFileAsFile } from "@/lib/storage/file-resolver";
 import type { DocumentExtractionResult, ExtractApiResponse } from "@/lib/extraction/types";
@@ -41,6 +42,9 @@ export async function reExtractSavedDocument(record: SavedCaseRecord, documentId
 
     const formData = new FormData();
     formData.append(document.type, file, document.fileName);
+    const textResult = await extractPdfText(file);
+    formData.append(`${document.type}__text`, textResult.text);
+    formData.append(`${document.type}__pages`, String(textResult.pages));
 
     const response = await fetch("/api/extract", {
       method: "POST",

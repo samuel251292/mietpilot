@@ -23,6 +23,7 @@ import { buildCalculationInputFromExtracted, buildCalculationReport, calculateSe
 import { CaseService } from "@/lib/case-service";
 import { createLetterEmailDraft } from "@/lib/communication/communication-service";
 import { dataUrlToFile } from "@/lib/documents/data-url";
+import { extractPdfText } from "@/lib/extraction/pdf-text";
 import { createPendingExtractedChanges, mergePendingExtractedChanges } from "@/lib/extraction/pending-changes";
 import { buildSavedCaseDocumentFromFile } from "@/lib/storage/document-storage";
 import { buildStorageReadyGeneratedFile } from "@/lib/storage/generated-file-storage";
@@ -391,7 +392,12 @@ export function NewCaseWizard({ record, editMode = false }: { record: CaseRecord
       for (const [type, upload] of readableUploads) {
         if (!upload) continue;
         const filePart = upload.file ?? (upload.dataUrl ? await dataUrlToFile(upload.dataUrl, upload.fileName, upload.mimeType) : undefined);
-        if (filePart) formData.append(type, filePart, upload.fileName);
+        if (filePart) {
+          formData.append(type, filePart, upload.fileName);
+          const textResult = await extractPdfText(filePart);
+          formData.append(`${type}__text`, textResult.text);
+          formData.append(`${type}__pages`, String(textResult.pages));
+        }
       }
 
       const response = await fetch("/api/extract", {

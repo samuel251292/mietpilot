@@ -6,80 +6,79 @@ export type PdfTextResult = {
   requiresOcr: boolean;
 };
 
-export async function extractPdfText(buffer: Buffer): Promise<PdfTextResult> {
-  if (buffer.length === 0) {
+export async function extractPdfText(file: Blob | ArrayBuffer | Uint8Array): Promise<PdfTextResult> {
+  if (typeof window === "undefined") {
+    throw new Error("PDF-Textauslesung läuft im Vercel-Deployment nur im Browser.");
+  }
+
+  const data = await toPdfData(file);
+  if (data.byteLength === 0) {
     throw new Error("file buffer empty");
   }
 
-  const pdfParseModule = await importPdfParse();
+  const pdfjs = await importPdfJs();
+  const loadingTask = pdfjs.getDocument({
+    data,
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    disableFontFace: true,
+    disableWorker: true,
+  });
+  const document = await loadingTask.promise;
+  const pageTexts: string[] = [];
 
-  if (pdfParseModule.kind === "legacy") {
-    const result = await pdfParseModule.parse(buffer);
-    const text = normalizePdfText(result.text ?? "");
-    return {
-      text,
-      pages: result.numpages ?? 0,
-      requiresOcr: !assessPdfTextQuality(text).isUsable,
-    };
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const page = await document.getPage(pageNumber);
+    const content = await page.getTextContent();
+    const pageText = content.items.map((item) => ("str" in item ? String(item.str) : "")).join(" ");
+    if (pageText) pageTexts.push(pageText);
+    page.cleanup();
   }
 
-  const data = bufferToOwnedUint8Array(buffer);
-  const parser = new pdfParseModule.PDFParse({ data });
+  await document.destroy();
 
-  try {
-    const result = await parser.getText();
-    const text = normalizePdfText(result.text ?? "");
-
-    return {
-      text,
-      pages: result.total,
-      requiresOcr: !assessPdfTextQuality(text).isUsable,
-    };
-  } finally {
-    await parser.destroy().catch((error: unknown) => {
-      console.error("pdf-parse destroy failed", error);
-    });
-  }
+  const text = normalizePdfText(pageTexts.join("\n\n"));
+  return {
+    text,
+    pages: document.numPages,
+    requiresOcr: !assessPdfTextQuality(text).isUsable,
+  };
 }
 
-type PdfParseModule =
-  | {
-      kind: "modern";
-      PDFParse: new (options: { data: Uint8Array }) => {
-        getText: () => Promise<{ text?: string; total: number }>;
-        destroy: () => Promise<void>;
-      };
-    }
-  | {
-      kind: "legacy";
-      parse: (buffer: Buffer) => Promise<{ text?: string; numpages?: number }>;
-    };
+type PdfJsModule = {
+  getDocument: (options: {
+    data: Uint8Array;
+    useWorkerFetch?: boolean;
+    isEvalSupported?: boolean;
+    disableFontFace?: boolean;
+    disableWorker?: boolean;
+  }) => {
+    promise: Promise<{
+      numPages: number;
+      getPage: (pageNumber: number) => Promise<{
+        getTextContent: () => Promise<{ items: Array<{ str?: string }> }>;
+        cleanup: () => void;
+      }>;
+      destroy: () => Promise<void>;
+    }>;
+  };
+};
 
-async function importPdfParse(): Promise<PdfParseModule> {
-  try {
-    const module = await import("pdf-parse");
-    const maybeModern = module as typeof module & {
-      PDFParse?: PdfParseModule extends { kind: "modern"; PDFParse: infer T } ? T : never;
-      default?: unknown;
-    };
-
-    if (typeof maybeModern.PDFParse === "function") {
-      return { kind: "modern", PDFParse: maybeModern.PDFParse };
-    }
-
-    if (typeof maybeModern.default === "function") {
-      return { kind: "legacy", parse: maybeModern.default as (buffer: Buffer) => Promise<{ text?: string; numpages?: number }> };
-    }
-
-    throw new Error(`pdf-parse import failed: exports=${Object.keys(module).join(", ") || "none"}`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`pdf-parse import failed: ${message}`);
-  }
+async function importPdfJs(): Promise<PdfJsModule> {
+  const module = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as PdfJsModule;
+  return module;
 }
 
-function bufferToOwnedUint8Array(buffer: Buffer) {
-  return new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+async function toPdfData(file: Blob | ArrayBuffer | Uint8Array) {
+  if (file instanceof Uint8Array) {
+    return new Uint8Array(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength));
+  }
+
+  if (file instanceof ArrayBuffer) {
+    return new Uint8Array(file.slice(0));
+  }
+
+  return new Uint8Array(await file.arrayBuffer());
 }
 
 export function assertTextWasFound(result: PdfTextResult) {
