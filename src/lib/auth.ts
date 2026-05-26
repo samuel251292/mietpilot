@@ -8,9 +8,17 @@ export const demoUsers: User[] = [
   {
     id: "admin",
     name: "Admin",
-    email: "admin@mietpilot.local",
+    email: "admin@hausapp.ch",
     password: "admin123",
     role: "admin",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "mueller",
+    name: "Mueller",
+    email: "mueller@test.ch",
+    password: "mieter123",
+    role: "employee",
     createdAt: "2026-01-01T00:00:00.000Z",
   },
   {
@@ -36,18 +44,28 @@ export type PublicUser = Omit<User, "password">;
 export const AuthService = {
   login(identifier: string, password: string): PublicUser | null {
     const normalized = identifier.trim().toLowerCase();
-    const user = demoUsers.find((item) => item.email.toLowerCase() === normalized || item.name.toLowerCase() === normalized);
+    const user = demoUsers.find(
+      (item) =>
+        item.email.toLowerCase() === normalized ||
+        item.name.toLowerCase() === normalized ||
+        getDemoLoginAliases(item).includes(normalized),
+    );
     if (!user || user.password !== password) return null;
 
     const publicUser = toPublicUser(user);
-    window.localStorage.setItem(currentUserKey, JSON.stringify(publicUser));
-    window.dispatchEvent(new Event("mietpilot-auth-changed"));
+    writeCurrentUser(publicUser);
+    dispatchAuthChanged();
     return publicUser;
   },
 
   logout() {
-    window.localStorage.removeItem(currentUserKey);
-    window.dispatchEvent(new Event("mietpilot-auth-changed"));
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.removeItem(currentUserKey);
+    } catch {
+      // Browser storage can be unavailable in hardened/private environments.
+    }
+    dispatchAuthChanged();
   },
 
   currentUser(): PublicUser | null {
@@ -91,4 +109,24 @@ export function visibleCases<T extends CaseRecord | SavedCaseRecord>(user: Publi
 function toPublicUser(user: User): PublicUser {
   const { password: _password, ...publicUser } = user;
   return publicUser;
+}
+
+function getDemoLoginAliases(user: User) {
+  if (user.id === "admin") return ["admin", "admin@mietpilot.local"];
+  if (user.id === "mueller") return ["mieter", "mueller", "müller"];
+  return [user.id];
+}
+
+function writeCurrentUser(user: PublicUser) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(currentUserKey, JSON.stringify(user));
+  } catch {
+    // Keep login failure-free; the guarded route will simply ask for login again if persistence is unavailable.
+  }
+}
+
+function dispatchAuthChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("mietpilot-auth-changed"));
 }

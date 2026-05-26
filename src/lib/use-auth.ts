@@ -1,24 +1,37 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AuthService, type PublicUser } from "@/lib/auth";
+import type { PublicUser } from "@/lib/auth";
+import { AppAuthService } from "@/lib/auth/auth-service";
 
 export function useAuth() {
   const [user, setUser] = useState<PublicUser | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    const load = () => {
-      setUser(AuthService.currentUser());
-      setLoaded(true);
+    let mounted = true;
+
+    const load = async () => {
+      try {
+        const currentUser = await AppAuthService.getCurrentUser();
+        if (!mounted) return;
+        setUser(currentUser);
+      } catch {
+        if (!mounted) return;
+        setUser(null);
+      } finally {
+        if (mounted) setLoaded(true);
+      }
     };
 
-    load();
-    window.addEventListener("mietpilot-auth-changed", load);
-    window.addEventListener("storage", load);
+    void load();
+    const handleAuthChange = () => void load();
+    window.addEventListener("mietpilot-auth-changed", handleAuthChange);
+    window.addEventListener("storage", handleAuthChange);
     return () => {
-      window.removeEventListener("mietpilot-auth-changed", load);
-      window.removeEventListener("storage", load);
+      mounted = false;
+      window.removeEventListener("mietpilot-auth-changed", handleAuthChange);
+      window.removeEventListener("storage", handleAuthChange);
     };
   }, []);
 

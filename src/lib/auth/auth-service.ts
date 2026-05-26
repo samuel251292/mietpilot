@@ -2,13 +2,6 @@
 
 import { AuthService as DemoAuthService, type PublicUser } from "@/lib/auth";
 import type { UserRole } from "@/types/case";
-import {
-  canUseSupabaseAuth,
-  getProfile as getSupabaseProfile,
-  getSession as getSupabaseSession,
-  signInWithPassword,
-  signOut as signOutSupabase,
-} from "@/lib/auth/supabase-auth-provider";
 
 export type AuthProviderName = "demo" | "supabase";
 
@@ -42,38 +35,46 @@ const authProvider = resolveAuthProvider();
 
 export const AppAuthService: AppAuthService = {
   async getCurrentUser() {
-    if (authProvider === "supabase" && canUseSupabaseAuth()) {
-      return getSupabaseProfile();
+    if (authProvider === "supabase") {
+      const supabaseAuth = await loadSupabaseAuthProvider();
+      if (supabaseAuth.canUseSupabaseAuth()) return supabaseAuth.getProfile();
     }
     return DemoAuthService.currentUser();
   },
 
   async signIn(email: string, password: string) {
-    if (authProvider === "supabase" && canUseSupabaseAuth()) {
-      return signInWithPassword(email, password);
+    if (authProvider === "supabase") {
+      const supabaseAuth = await loadSupabaseAuthProvider();
+      if (supabaseAuth.canUseSupabaseAuth()) return supabaseAuth.signInWithPassword(email, password);
     }
     return DemoAuthService.login(email, password);
   },
 
   async signOut() {
-    if (authProvider === "supabase" && canUseSupabaseAuth()) {
-      await signOutSupabase();
-      window.dispatchEvent(new Event("mietpilot-auth-changed"));
-      return;
+    if (authProvider === "supabase") {
+      const supabaseAuth = await loadSupabaseAuthProvider();
+      if (supabaseAuth.canUseSupabaseAuth()) {
+        await supabaseAuth.signOut();
+        dispatchAuthChanged();
+        return;
+      }
     }
     DemoAuthService.logout();
   },
 
   async getSession() {
-    if (authProvider === "supabase" && canUseSupabaseAuth()) {
-      const session = await getSupabaseSession();
-      const user = session?.user ? await getSupabaseProfile(session.user) : null;
-      return {
-        provider: "supabase",
-        user,
-        expiresAt: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : undefined,
-        raw: session,
-      };
+    if (authProvider === "supabase") {
+      const supabaseAuth = await loadSupabaseAuthProvider();
+      if (supabaseAuth.canUseSupabaseAuth()) {
+        const session = await supabaseAuth.getSession();
+        const user = session?.user ? await supabaseAuth.getProfile(session.user) : null;
+        return {
+          provider: "supabase",
+          user,
+          expiresAt: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : undefined,
+          raw: session,
+        };
+      }
     }
 
     return {
@@ -105,7 +106,16 @@ export function getActiveAuthProvider(): AuthProviderName {
 }
 
 function resolveAuthProvider(): AuthProviderName {
-  const configured = (process.env.NEXT_PUBLIC_AUTH_PROVIDER ?? process.env.AUTH_PROVIDER ?? "demo").toLowerCase();
+  const configured = (process.env.NEXT_PUBLIC_AUTH_PROVIDER ?? process.env.AUTH_PROVIDER ?? "demo").trim().toLowerCase();
   if (configured === "supabase") return "supabase";
   return "demo";
+}
+
+async function loadSupabaseAuthProvider() {
+  return import("@/lib/auth/supabase-auth-provider");
+}
+
+function dispatchAuthChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("mietpilot-auth-changed"));
 }

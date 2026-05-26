@@ -5,17 +5,23 @@ import { useRouter } from "next/navigation";
 import { LogIn, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { appBranding } from "@/lib/branding";
-import { AuthService } from "@/lib/auth";
+import { AppAuthService } from "@/lib/auth/auth-service";
 
 export default function LoginPage() {
   const router = useRouter();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const user = AuthService.login(identifier, password);
+    setError("");
+    setIsSubmitting(true);
+
+    const user = await AppAuthService.signIn(identifier, password).catch(() => null);
+    setIsSubmitting(false);
+
     if (!user) {
       setError("E-Mail/Benutzername oder Passwort ist falsch.");
       return;
@@ -58,9 +64,9 @@ export default function LoginPage() {
             />
           </label>
           {error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</div>}
-          <Button className="w-full" type="submit">
+          <Button className="w-full" type="submit" disabled={isSubmitting}>
             <LogIn size={17} />
-            Einloggen
+            {isSubmitting ? "Anmelden ..." : "Einloggen"}
           </Button>
         </form>
       </section>

@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import { appBranding } from "@/lib/branding";
 import { cn } from "@/lib/utils";
-import { AuthService, roleLabel } from "@/lib/auth";
+import { roleLabel } from "@/lib/auth";
+import { AppAuthService } from "@/lib/auth/auth-service";
 import { useAuth } from "@/lib/use-auth";
 
 const nav = [
@@ -39,8 +40,8 @@ export function Sidebar() {
   const router = useRouter();
   const { user } = useAuth();
 
-  function logout() {
-    AuthService.logout();
+  async function logout() {
+    await AppAuthService.signOut();
     router.replace("/login");
   }
 
