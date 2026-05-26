@@ -42,9 +42,11 @@ export async function reExtractSavedDocument(record: SavedCaseRecord, documentId
 
     const formData = new FormData();
     formData.append(document.type, file, document.fileName);
-    const textResult = await extractPdfText(file);
-    formData.append(`${document.type}__text`, textResult.text);
-    formData.append(`${document.type}__pages`, String(textResult.pages));
+    const textResult = await extractPdfText(file).catch(() => null);
+    if (textResult) {
+      formData.append(`${document.type}__text`, textResult.text);
+      formData.append(`${document.type}__pages`, String(textResult.pages));
+    }
 
     const response = await fetch("/api/extract", {
       method: "POST",

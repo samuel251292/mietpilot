@@ -394,9 +394,11 @@ export function NewCaseWizard({ record, editMode = false }: { record: CaseRecord
         const filePart = upload.file ?? (upload.dataUrl ? await dataUrlToFile(upload.dataUrl, upload.fileName, upload.mimeType) : undefined);
         if (filePart) {
           formData.append(type, filePart, upload.fileName);
-          const textResult = await extractPdfText(filePart);
-          formData.append(`${type}__text`, textResult.text);
-          formData.append(`${type}__pages`, String(textResult.pages));
+          const textResult = await extractPdfText(filePart).catch(() => null);
+          if (textResult) {
+            formData.append(`${type}__text`, textResult.text);
+            formData.append(`${type}__pages`, String(textResult.pages));
+          }
         }
       }
 
