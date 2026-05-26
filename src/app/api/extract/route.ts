@@ -44,11 +44,24 @@ export async function POST(request: Request) {
       documentTypes.flatMap((type) => {
         const texts = formData.getAll(`${type}__text`).map((value) => (typeof value === "string" ? value : ""));
         const pages = formData.getAll(`${type}__pages`).map((value) => (typeof value === "string" ? Number(value) : 0));
+        const ocrAttempted = formData.getAll(`${type}__ocrAttempted`).map((value) => value === "true");
+        const ocrUsed = formData.getAll(`${type}__ocrUsed`).map((value) => value === "true");
+        const ocrErrors = formData.getAll(`${type}__ocrError`).map((value) => (typeof value === "string" ? value : ""));
+        const warnings = formData.getAll(`${type}__warning`).map((value) => (typeof value === "string" ? value : "")).filter(Boolean);
 
         return formData
           .getAll(type)
           .filter(isUploadedFile)
-          .map((file, index) => parseDocument(type, file, { text: texts[index] ?? "", pages: pages[index] ?? 0 }));
+          .map((file, index) =>
+            parseDocument(type, file, {
+              text: texts[index] ?? "",
+              pages: pages[index] ?? 0,
+              ocrAttempted: ocrAttempted[index] ?? false,
+              ocrUsed: ocrUsed[index] ?? false,
+              ocrError: ocrErrors[index] ?? "",
+              warnings,
+            }),
+          );
       }),
     );
 
@@ -80,7 +93,11 @@ export async function POST(request: Request) {
   }
 }
 
-async function parseDocument(type: ExtractionDocumentType, file: File, clientTextResult?: { text: string; pages?: number }): Promise<DocumentExtractionResult> {
+async function parseDocument(
+  type: ExtractionDocumentType,
+  file: File,
+  clientTextResult?: { text: string; pages?: number; ocrAttempted?: boolean; ocrUsed?: boolean; ocrError?: string; warnings?: string[] },
+): Promise<DocumentExtractionResult> {
   if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
     return {
       type,
@@ -112,8 +129,9 @@ async function parseDocument(type: ExtractionDocumentType, file: File, clientTex
         extractedTextLength: 0,
         data: {},
         issues: [{ field: type, message: "PDF-Text konnte im Browser nicht gelesen werden. Bitte Dokument manuell prüfen." }],
-        error: "PDF-Text konnte im Browser nicht gelesen werden.",
-        message: "PDF-Text konnte im Browser nicht gelesen werden. Bitte Dokument manuell prüfen.",
+        warnings: clientTextResult?.warnings,
+        error: clientTextResult?.ocrAttempted ? clientTextResult.ocrError || "OCR fehlgeschlagen" : "PDF-Text konnte im Browser nicht gelesen werden.",
+        message: clientTextResult?.ocrAttempted ? "OCR fehlgeschlagen. Bitte Dokument manuell prüfen." : "PDF-Text konnte im Browser nicht gelesen werden. Bitte Dokument manuell prüfen.",
       };
     }
 
@@ -171,11 +189,12 @@ async function parseDocument(type: ExtractionDocumentType, file: File, clientTex
       status: hasData ? "Daten erkannt" : "Text erkannt",
       success: true,
       requiresOCR: false,
-      ocrUsed: false,
+      ocrUsed: Boolean(clientTextResult?.ocrUsed),
       textLength: text.length,
       extractedTextLength: text.length,
       data: parsed.data,
       issues: parsed.issues,
+      warnings: clientTextResult?.warnings,
       message: hasData ? undefined : "Text wurde erkannt, aber keine sicheren Falldaten. Bitte prüfen.",
       quality,
     };

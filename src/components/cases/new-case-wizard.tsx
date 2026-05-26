@@ -394,10 +394,26 @@ export function NewCaseWizard({ record, editMode = false }: { record: CaseRecord
         const filePart = upload.file ?? (upload.dataUrl ? await dataUrlToFile(upload.dataUrl, upload.fileName, upload.mimeType) : undefined);
         if (filePart) {
           formData.append(type, filePart, upload.fileName);
-          const textResult = await extractPdfText(filePart).catch(() => null);
+          const textResult = await extractPdfText(filePart, {
+            onStatus: (status) => {
+              if (status === "ocr-started") setNotice(`${type}: OCR wird ausgeführt...`);
+              if (status === "ocr-success") setNotice(`${type}: OCR-Text erkannt. Werte werden geprüft.`);
+              if (status === "ocr-failed") setNotice(`${type}: OCR fehlgeschlagen. Manuelle Prüfung bleibt möglich.`);
+            },
+          }).catch((error) => {
+            const message = error instanceof Error ? error.message : "PDF konnte im Browser nicht gelesen werden.";
+            formData.append(`${type}__warning`, `OCR fehlgeschlagen: ${message}`);
+            formData.append(`${type}__ocrAttempted`, "true");
+            formData.append(`${type}__ocrUsed`, "false");
+            return null;
+          });
           if (textResult) {
             formData.append(`${type}__text`, textResult.text);
             formData.append(`${type}__pages`, String(textResult.pages));
+            formData.append(`${type}__ocrAttempted`, String(Boolean(textResult.ocrAttempted)));
+            formData.append(`${type}__ocrUsed`, String(Boolean(textResult.ocrUsed)));
+            if (textResult.ocrError) formData.append(`${type}__ocrError`, textResult.ocrError);
+            for (const warning of textResult.warnings ?? []) formData.append(`${type}__warning`, warning);
           }
         }
       }

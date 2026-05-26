@@ -13,6 +13,8 @@ declare module "pdfjs-dist/build/pdf.mjs" {
       numPages: number;
       getPage: (pageNumber: number) => Promise<{
         getTextContent: () => Promise<{ items: Array<{ str?: string }> }>;
+        getViewport: (options: { scale: number }) => { width: number; height: number };
+        render: (options: { canvasContext: CanvasRenderingContext2D; viewport: { width: number; height: number } }) => { promise: Promise<void> };
         cleanup: () => void;
       }>;
       destroy: () => Promise<void>;

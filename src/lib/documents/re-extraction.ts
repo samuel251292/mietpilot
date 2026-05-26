@@ -46,6 +46,10 @@ export async function reExtractSavedDocument(record: SavedCaseRecord, documentId
     if (textResult) {
       formData.append(`${document.type}__text`, textResult.text);
       formData.append(`${document.type}__pages`, String(textResult.pages));
+      formData.append(`${document.type}__ocrAttempted`, String(Boolean(textResult.ocrAttempted)));
+      formData.append(`${document.type}__ocrUsed`, String(Boolean(textResult.ocrUsed)));
+      if (textResult.ocrError) formData.append(`${document.type}__ocrError`, textResult.ocrError);
+      for (const warning of textResult.warnings ?? []) formData.append(`${document.type}__warning`, warning);
     }
 
     const response = await fetch("/api/extract", {
