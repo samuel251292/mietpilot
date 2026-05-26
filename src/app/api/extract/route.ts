@@ -4,7 +4,7 @@ import { extractDatenblatt } from "@/lib/extraction/extract-datenblatt";
 import { extractMietvertrag } from "@/lib/extraction/extract-mietvertrag";
 import { extractRichtwert } from "@/lib/extraction/extract-richtwert";
 import { extractTextWithOcrFallback } from "@/lib/extraction/ocr-fallback";
-import { assessPdfTextQuality, extractPdfText, normalizePdfText } from "@/lib/extraction/pdf-text";
+import { assessPdfTextQuality, normalizePdfText } from "@/lib/extraction/pdf-text";
 import type { DocumentExtractionResult, ExtractionDocumentKey, ExtractionDocumentType } from "@/lib/extraction/types";
 import { scannedPdfMessage } from "@/lib/extraction/types";
 import type { ExtractedData } from "@/types/case";
@@ -99,7 +99,7 @@ async function parseDocument(type: ExtractionDocumentType, file: File, clientTex
 
   try {
     const clientText = normalizePdfText(clientTextResult?.text ?? "");
-    const text = clientText || (await extractServerPdfText(file));
+    const text = clientText;
 
     if (!text) {
       return {
@@ -197,12 +197,6 @@ async function parseDocument(type: ExtractionDocumentType, file: File, clientTex
       message,
     };
   }
-}
-
-async function extractServerPdfText(file: File) {
-  const arrayBuffer = await file.arrayBuffer();
-  const result = await extractPdfText(arrayBuffer);
-  return result.text;
 }
 
 function parseByType(type: ExtractionDocumentType, text: string) {

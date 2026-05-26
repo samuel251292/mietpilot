@@ -7,6 +7,10 @@ export type PdfTextResult = {
 };
 
 export async function extractPdfText(file: Blob | ArrayBuffer | Uint8Array): Promise<PdfTextResult> {
+  if (typeof window === "undefined") {
+    throw new Error("PDF-Textauslesung ist nur im Browser verfügbar.");
+  }
+
   const data = await toPdfData(file);
   if (data.byteLength === 0) {
     throw new Error("file buffer empty");
@@ -14,13 +18,11 @@ export async function extractPdfText(file: Blob | ArrayBuffer | Uint8Array): Pro
 
   const pdfjs = await importPdfJs();
   configurePdfJsWorker(pdfjs);
-  const isServer = typeof window === "undefined";
   const loadingTask = pdfjs.getDocument({
     data,
     useWorkerFetch: false,
     isEvalSupported: false,
     disableFontFace: true,
-    disableWorker: isServer,
   });
   const document = await loadingTask.promise;
   const pageTexts: string[] = [];
@@ -66,57 +68,15 @@ type PdfJsModule = {
 };
 
 async function importPdfJs(): Promise<PdfJsModule> {
-  await ensurePdfJsRuntime();
-  const module = (await importPdfJsModule()) as PdfJsModule;
+  const module = (await import("pdfjs-dist/build/pdf.mjs")) as PdfJsModule;
   return module;
 }
 
-async function importPdfJsModule() {
-  if (typeof window !== "undefined") {
-    return import("pdfjs-dist/build/pdf.mjs");
-  }
-
-  return import("pdfjs-dist/legacy/build/pdf.mjs");
-}
-
 function configurePdfJsWorker(pdfjs: PdfJsModule) {
-  if (typeof window === "undefined") return;
   if (!pdfjs.GlobalWorkerOptions) return;
   if (pdfjs.GlobalWorkerOptions.workerSrc) return;
 
   pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
-}
-
-async function ensurePdfJsRuntime() {
-  if (typeof window !== "undefined") return;
-
-  const scope = globalThis as Record<string, unknown>;
-
-  if (scope.DOMMatrix && scope.DOMPoint && scope.DOMRect) return;
-
-  try {
-    const canvas = (await serverOnlyImport("@napi-rs/canvas")) as {
-      DOMMatrix?: unknown;
-      DOMPoint?: unknown;
-      DOMRect?: unknown;
-      ImageData?: unknown;
-      Path2D?: unknown;
-    };
-
-    scope.DOMMatrix ??= canvas.DOMMatrix;
-    scope.DOMPoint ??= canvas.DOMPoint;
-    scope.DOMRect ??= canvas.DOMRect;
-    scope.ImageData ??= canvas.ImageData;
-    scope.Path2D ??= canvas.Path2D;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`PDF.js Node-Polyfills konnten nicht geladen werden: ${message}`);
-  }
-}
-
-function serverOnlyImport(specifier: string): Promise<unknown> {
-  const dynamicImport = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<unknown>;
-  return dynamicImport(specifier);
 }
 
 async function toPdfData(file: Blob | ArrayBuffer | Uint8Array) {
